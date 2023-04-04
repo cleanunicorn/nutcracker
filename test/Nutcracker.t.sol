@@ -10,7 +10,7 @@ import "../src/ExploiterERC777.sol";
 
 import "../src/Token.sol";
 
-import {IERC1820Registry} from  "@openzeppelin/contracts/utils/introspection/IERC1820Registry.sol";
+import {IERC1820Registry} from "@openzeppelin/contracts/utils/introspection/IERC1820Registry.sol";
 
 contract DummyERC777TokensRecipient {
     function tokensReceived(
@@ -61,7 +61,7 @@ contract NutcrackerTest is Test, DummyERC777TokensRecipient {
         bytes32 hash = ECDSA.toEthSignedMessageHash(abi.encodePacked(keccak256(abi.encodePacked(hacker))));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PRIVATE_KEY, hash);
         bytes memory signature = abi.encodePacked(r, s, v);
-        emit log_bytes(signature);        
+        emit log_bytes(signature);
 
         // Preload PeanutV3 with assets
         // These assets are the one being stolen by the hacker
@@ -69,13 +69,7 @@ contract NutcrackerTest is Test, DummyERC777TokensRecipient {
 
         // Deposit assets
         token.approve(address(peanutV3), _amount);
-        uint256 depositId = peanutV3.makeDeposit(
-            address(token),
-            _contractType,
-            _amount,
-            _tokenId,
-            SIGNER_ADDRESS
-        );
+        uint256 depositId = peanutV3.makeDeposit(address(token), _contractType, _amount, _tokenId, SIGNER_ADDRESS);
 
         emit log_named_uint("Deposit id", depositId);
         uint256 initialBalance = token.balanceOf(hacker);
@@ -91,8 +85,8 @@ contract NutcrackerTest is Test, DummyERC777TokensRecipient {
 
         // Withdraw
         peanutV3.withdrawDeposit(
-            depositId, 
-            hacker, 
+            depositId,
+            hacker,
             ECDSA.toEthSignedMessageHash(abi.encodePacked(keccak256(abi.encodePacked(hacker)))),
             signature
         );
