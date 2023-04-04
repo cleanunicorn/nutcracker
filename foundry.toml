@@ -7,6 +7,7 @@ libs = ["lib"]
 remappings = [
     "ds-test/=lib/forge-std/lib/ds-test/src/",
     "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
 ]
 auto_detect_remappings = true
 libraries = []
@@ -35,7 +36,7 @@ sender = "0x1804c8ab1f12e6bbf3894d4083f33e07309d1f38"
 tx_origin = "0x1804c8ab1f12e6bbf3894d4083f33e07309d1f38"
 initial_balance = "0xffffffffffffffffffffffff"
 block_number = 1
-gas_limit = 9223372036854775807
+gas_limit = "18446744073709551615"
 block_base_fee_per_gas = 0
 block_coinbase = "0x0000000000000000000000000000000000000000"
 block_timestamp = 1
